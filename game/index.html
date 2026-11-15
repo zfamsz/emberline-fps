@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMBERLINE — Cinderworks | a three.js tactical FPS</title>
+<style>
+  /* EMBERLINE look: dark iron canvas, bone ink, one ember accent. */
+  :root {
+    --canvas: #171310;
+    --surface: #241c17;
+    --hairline: #3a2f28;
+    --ink: #efe6d8;
+    --muted: #9a8d80;
+    --accent: #ff7a1a;
+    --ember: #ff4d00;
+    --radius-panel: 4px;
+    --radius-control: 8px;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud[hidden] { display: none; }
+
+  #topbar { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; font-family: var(--font-readout); }
+  #timer { font-size: 30px; line-height: 1; letter-spacing: .02em; }
+  #timer.buy { color: var(--accent); }
+  #phase { font-size: 11px; letter-spacing: .14em; color: var(--muted); margin-top: 4px; }
+  #score-line { font-size: 13px; margin-top: 6px; color: var(--ink); }
+  #alive { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  #bomb-status { font-size: 12px; color: var(--accent); margin-top: 4px; min-height: 14px; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); --gap: 5px; }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: 14px; top: calc(15px - var(--gap) - 7px); width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 14px; top: calc(15px + var(--gap)); width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 14px; left: calc(15px - var(--gap) - 7px); height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 14px; left: calc(15px + var(--gap)); height: 2px; width: 7px; }
+  #crosshair b { position: absolute; left: 14px; top: 14px; width: 2px; height: 2px; background: var(--accent); }
+
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker.kill i { background: var(--ember); }
+  #hitmarker i { position: absolute; background: var(--accent); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+
+  #health { position: fixed; left: 32px; bottom: 24px; font-family: var(--font-readout); }
+  #hp-num { font-size: 44px; line-height: 1; }
+  #hp-label { font-size: 12px; color: var(--muted); letter-spacing: .12em; }
+  #hp-bar { width: 180px; height: 6px; background: var(--hairline); margin-top: 6px; }
+  #hp-fill { height: 100%; width: 100%; background: var(--accent); }
+  #armor-line { font-size: 12px; color: var(--muted); margin-top: 4px; min-height: 14px; }
+
+  #ammo { position: fixed; right: 32px; bottom: 24px; text-align: right; font-family: var(--font-readout); }
+  #ammo-mag { font-size: 52px; line-height: 1; }
+  #ammo.empty #ammo-mag { color: var(--accent); }
+  #ammo-reserve { font-size: 16px; color: var(--muted); }
+  #weapon-name { font-size: 13px; color: var(--ink); margin-top: 4px; }
+  #grenade-count { font-size: 12px; color: var(--muted); }
+  #money { position: fixed; right: 32px; bottom: 130px; font-family: var(--font-readout); font-size: 18px; color: var(--accent); }
+
+  #killfeed { position: fixed; right: 32px; top: 16px; text-align: right; font-family: var(--font-readout); font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+  #killfeed div:first-child { color: var(--ink); }
+
+  #banner { position: fixed; left: 50%; top: 26%; transform: translateX(-50%); text-align: center; }
+  #banner[hidden] { display: none; }
+  #banner-title { font-size: 40px; font-weight: 600; letter-spacing: .02em; }
+  #banner.good #banner-title { color: var(--accent); }
+  #banner.bad #banner-title { color: var(--ember); }
+  #banner-sub { font-size: 15px; color: var(--muted); margin-top: 6px; }
+
+  #dmg { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 180ms linear;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(255, 40, 0, .55) 100%); }
+
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--canvas) 86%, transparent); }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(460px, 100%); padding: 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-panel); }
+  .panel h1 { margin: 0 0 8px; font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
+  .panel h1 em { color: var(--accent); font-style: normal; }
+  .panel p { margin: 0 0 24px; font-size: 15px; line-height: 1.5; color: var(--muted); }
+  #play { font: inherit; font-weight: 600; padding: 12px 16px; border: 1px solid var(--accent); border-radius: var(--radius-control); background: var(--accent); color: var(--canvas); cursor: pointer; }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  .keys { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
+  .keys kbd { min-width: 24px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--radius-panel); font-family: var(--font-readout); font-size: 12px; color: var(--ink); text-align: center; }
+
+  #buy-menu { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(480px, 92vw); background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-panel); padding: 24px; pointer-events: auto; z-index: 5; }
+  #buy-menu[hidden] { display: none; }
+  #buy-menu h2 { margin: 0 0 4px; font-size: 20px; }
+  #buy-menu h2 span { float: right; color: var(--accent); font-family: var(--font-readout); font-size: 16px; }
+  #buy-note { font-size: 13px; color: var(--muted); min-height: 16px; margin-bottom: 12px; }
+  #buy-items { display: grid; gap: 8px; }
+  #buy-items button { display: flex; justify-content: space-between; gap: 12px; text-align: left; font: inherit; color: var(--ink); background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-control); padding: 10px 12px; cursor: pointer; }
+  #buy-items button:hover { border-color: var(--accent); }
+  #buy-items button span { color: var(--muted); font-size: 13px; font-family: var(--font-readout); }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="dmg"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="topbar">
+    <div id="timer">0:15</div>
+    <div id="phase">BUY PHASE</div>
+    <div id="score-line">EMBER 0 — 0 ASH · ROUND 1</div>
+    <div id="alive">Ember 5 alive · Ash 5 alive</div>
+    <div id="bomb-status">No bomb planted</div>
+  </div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="health">
+    <div><span id="hp-num">100</span> <span id="hp-label">HEALTH</span></div>
+    <div id="hp-bar"><div id="hp-fill"></div></div>
+    <div id="armor-line"></div>
+  </div>
+  <div id="ammo">
+    <span id="ammo-mag">12</span><span id="ammo-reserve">/ 36</span>
+    <div id="weapon-name">P9 Sidearm</div>
+    <div id="grenade-count">G — no HE</div>
+  </div>
+  <div id="money">$800</div>
+  <div id="killfeed"></div>
+  <div id="banner" hidden><div id="banner-title"></div><div id="banner-sub"></div></div>
+</div>
+
+<div id="buy-menu" hidden>
+  <h2>Buy — Cinderworks <span id="buy-money">$800</span></h2>
+  <div id="buy-note">Keys 1–6 buy instantly. B closes.</div>
+  <div id="buy-items"></div>
+</div>
+
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">EMBER<em>LINE</em></h1>
+    <p id="overlay-copy">Cinderworks yard. Ember attacks, Ash holds the sites. Plant the bomb or clear the yard.</p>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move · <kbd>Mouse</kbd> Look</li>
+      <li><kbd>Click</kbd> Fire · <kbd>R</kbd> Reload · <kbd>G</kbd> Grenade</li>
+      <li><kbd>B</kbd> Buy menu (buy phase) · <kbd>E</kbd> Hold to plant</li>
+      <li><kbd>Ctrl</kbd> Crouch · <kbd>Space</kbd> Jump</li>
+    </ul>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
